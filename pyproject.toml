@@ -1,0 +1,13 @@
+[project]
+name = "tavily-bitcoin-miner"
+version = "0.1.0"
+description = "Mine significant events in the world of Bitcoin and other cryptocurrencies on each date"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "openai>=1.63.2",
+    "pandas>=2.2.3",
+    "pydantic>=2.10.6",
+    "tqdm>=4.67.1",
+]
