@@ -1,4 +1,4 @@
-# Tavily Bitcoin Miner
+# Tavily Bitcoin Miner for Jakub
 
 Mine significant events in the world of Bitcoin and other cryptocurrencies for any given date using Tavily's AI search capabilities.
 
