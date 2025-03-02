@@ -3,11 +3,20 @@ name = "tavily-bitcoin-miner"
 version = "0.1.0"
 description = "Mine significant events in the world of Bitcoin and other cryptocurrencies on each date"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
+    "exa-py>=1.8.9",
     "httpx>=0.28.1",
     "openai>=1.63.2",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
+    "pydantic-ai>=0.0.29",
+    "pymongo>=4.11.1",
+    "tavily-python>=0.5.1",
     "tqdm>=4.67.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
 ]
