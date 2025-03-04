@@ -1,6 +1,7 @@
 # Bitcoin News Mining with Structured LLM Outputs
 
 This project uses Large Language Models (LLMs) to process, rank, and filter Bitcoin and cryptocurrency news, linking them to Bitcoin price movements.
+Built for a friend to help him label his art.
 
 ## Main Components
 
@@ -33,7 +34,7 @@ cd bitcoin-news-mining
 
 2. Install dependencies:
 ```bash
-pip install -e .
+uv sync
 ```
 
 3. Set up environment variables:
@@ -61,9 +62,6 @@ You can start MongoDB as a daemon process using either of these commands:
 ```bash
 # Using the module directly (recommended)
 python -m src.db_manager --start
-
-# Or using the compatibility wrapper
-python db_manager.py --start
 ```
 
 This will:
@@ -79,9 +77,6 @@ To check if MongoDB is running and view database statistics:
 ```bash
 # Using the module directly (recommended)
 python -m src.db_manager --status
-
-# Or using the compatibility wrapper
-python db_manager.py --status
 ```
 
 This will show:
@@ -97,70 +92,12 @@ When you're done, you can stop MongoDB using:
 ```bash
 # Using the module directly (recommended)
 python -m src.db_manager --stop
-
-# Or using the compatibility wrapper
-python db_manager.py --stop
 ```
 
 This will:
 1. Find the MongoDB process
 2. Send a termination signal
 3. Verify that MongoDB has stopped
-
-### Testing the Database Connection
-
-You can test the database connection using the provided example script:
-
-```bash
-python examples/db_connection_test.py
-```
-
-This script will:
-1. Check if MongoDB is running
-2. Connect to the database
-3. Display database statistics
-4. Test specific collections
-5. Show information about database indexes
-
-### Using the Database in Your Code
-
-You can use the database in your own code by importing the `MongoDB` class:
-
-```python
-from src.db import MongoDB
-
-# Initialize the database connection
-db = MongoDB()
-
-# Get database statistics
-stats = db.get_database_stats()
-print(f"Connected to database: {stats['database']}")
-print(f"Collections: {stats['collections']}")
-
-# Get events for a specific date
-from datetime import datetime
-date = datetime(2023, 1, 1)
-events = db.get_events_by_date(date)
-print(f"Found {len(events)} events for {date.strftime('%Y-%m-%d')}")
-```
-
-For a complete example of how to use the database in your code, see the `examples/db_usage_example.py` script:
-
-```bash
-# Start MongoDB if it's not already running
-python -m src.db_manager --start
-
-# Run the example script
-python examples/db_usage_example.py
-```
-
-This script demonstrates:
-1. Checking if MongoDB is running
-2. Connecting to the database
-3. Getting database statistics
-4. Creating and saving search results and events
-5. Retrieving and updating events
-6. Querying events by date
 
 ## Project Structure
 
@@ -244,7 +181,7 @@ python rank_events.py --date 2023-01-01 --min-score 0.8
 You can use the interactive application for query discovery:
 
 ```bash
-python app.py
+uv run app.py
 ```
 
 This will start a web server and you can access the application by opening a browser and navigating to `http://localhost:8000` (or the URL shown in the terminal).
@@ -263,52 +200,9 @@ For convenience, you can create a `.env` file in the project root directory with
 # API Keys
 EXA_API_KEY=your-exa-api-key
 OPENAI_API_KEY=your-openai-api-key
-
-# Optional Configuration
-# MONGODB_URI=mongodb://localhost:27017/
-# DATABASE_NAME=bitcoin_news
 ```
 
 The application will automatically load these environment variables when it starts.
-
-### Using the Pipelines in Your Code
-
-You can also use the pipelines in your own code:
-
-```python
-import asyncio
-from datetime import datetime
-from src.pipeline import CryptoEventPipeline, CryptoEventRankingPipeline
-
-async def example():
-    # Initialize the sourcing pipeline
-    sourcing_pipeline = CryptoEventPipeline(
-        exa_api_key="your-exa-api-key",
-        openai_api_key="your-openai-api-key",
-    )
-    
-    # Process a specific date
-    date = datetime(2023, 1, 1)
-    search_result, events = await sourcing_pipeline.process_date(date)
-    
-    # Print results
-    print(f"Found {len(events)} events for {date.strftime('%Y-%m-%d')}")
-    
-    # Initialize the ranking pipeline
-    ranking_pipeline = CryptoEventRankingPipeline(
-        openai_api_key="your-openai-api-key",
-    )
-    
-    # Rank events for the same date
-    ranked_events = await ranking_pipeline.rank_events_for_date(date)
-    
-    # Print ranked events
-    print(f"Ranked {len(ranked_events)} events")
-    for i, event in enumerate(ranked_events[:5]):
-        print(f"Event {i+1}: {event.title} (Rank: {event.rank})")
-
-if __name__ == "__main__":
-    asyncio.run(example())
 
 ## Overview
 
