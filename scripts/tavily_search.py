@@ -37,7 +37,8 @@ def main():
     parser.add_argument(
         "--topic",
         type=str,
-        default="bitcoin cryptocurrency",
+        default="Bitcoin cryptocurrency news",
+        # default="The most significant world events for Bitcoin and other cryptocurrencies",
         help="Base topic to search for (default: 'bitcoin cryptocurrency')",
     )
     parser.add_argument(
@@ -49,7 +50,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="tavily_results.json",
+        default="data_raw/tavily_results.json",
         help="Output file for search results (default: tavily_results.json)",
     )
     parser.add_argument(
@@ -86,8 +87,7 @@ def main():
     result = tavily.search(
         query=query,
         search_date=search_date,
-        topic="news",
-        time_range=args.time_range,
+        # topic="news",
         max_results=args.max_results,
     )
 
@@ -100,13 +100,16 @@ def main():
     # Print a summary
     print(f"\nSearch Query: {query}")
     print(f"Results found: {len(result.results)}")
-    print("\nTop 3 results:")
+    print("\nTop results:")
 
-    for i, item in enumerate(result.results[:3], 1):
+    # print(json.dumps(result.results[1], indent=2))
+
+    for i, item in enumerate(result.results, 1):
         print(f"\n{i}. {item.get('title', 'No title')}")
         print(f"   URL: {item.get('url', 'No URL')}")
-        content = item.get("content", "No content")
-        print(f"   Content: {content[:150]}...")
+        content = item.get("content")
+        if content:
+            print(f"   Content: {content[:400]}...")
 
 
 if __name__ == "__main__":

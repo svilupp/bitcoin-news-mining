@@ -5,13 +5,16 @@ description = "Mine significant events in the world of Bitcoin and other cryptoc
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "bson>=0.5.10",
     "exa-py>=1.8.9",
     "httpx>=0.28.1",
+    "monsterui>=1.0.11",
     "openai>=1.63.2",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
     "pydantic-ai>=0.0.29",
     "pymongo>=4.11.1",
+    "python-fasthtml>=0.12.4",
     "tavily-python>=0.5.1",
     "tqdm>=4.67.1",
 ]

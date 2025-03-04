@@ -27,7 +27,6 @@ class TavilySearch:
         query: str,
         search_date: Optional[datetime] = None,
         topic: str = "news",
-        time_range: str = "day",
         max_results: int = 10,
         include_domains: Optional[List[str]] = None,
         exclude_domains: Optional[List[str]] = None,
@@ -39,7 +38,6 @@ class TavilySearch:
             query: Search query
             search_date: Date to use for the search (defaults to current date)
             topic: Search topic category
-            time_range: Time range for search results
             max_results: Maximum number of results to return
             include_domains: List of domains to include in the search
             exclude_domains: List of domains to exclude from the search
@@ -50,9 +48,9 @@ class TavilySearch:
         """
         # Prepare search parameters
         search_params = {
-            "topic": topic,
-            "time_range": time_range,
+            # "topic": topic,
             "max_results": max_results,
+            "include_raw_content": True,
             **kwargs,
         }
 
@@ -67,13 +65,27 @@ class TavilySearch:
             logger.info(f"Executing Tavily search with query: {query}")
             response = self.client.search(query, **search_params)
 
+            results = []
+            for result in response.get("results", []):
+                results.append(
+                    {
+                        "url": result.get("url"),
+                        "title": result.get("title"),
+                        "summary": result.get("content"),
+                        "content": result.get("raw_content"),
+                        "score": result.get("score"),
+                        "published_date": result.get("published_date"),
+                        "score": result.get("score"),
+                    }
+                )
+
             # Create search result model
             result = SearchResult(
                 query=query,
                 search_date=search_date or datetime.utcnow(),
                 provider="tavily",
                 params=search_params,
-                results=response.get("results", []),
+                results=results,
                 summary=response.get("answer"),
             )
 
@@ -83,15 +95,21 @@ class TavilySearch:
             logger.error(f"Tavily search error: {str(e)}")
             raise
 
-    def format_crypto_query(self, base_query: str, date: datetime) -> str:
-        """Format query for crypto/bitcoin news on a specific date.
+    def format_crypto_query(
+        self, base_query: str, date: datetime, full_month: bool = True
+    ) -> str:
+        """Format query for crypto/bitcoin news on a specific date or month/year.
 
         Args:
             base_query: Base search query
             date: Date to search for
+            full_month: Whether to include month-level search (default: True)
 
         Returns:
             Formatted query string
         """
-        formatted_date = date.strftime("%B %d, %Y")
-        return f"{base_query} on {formatted_date}"
+
+        formatted_date = (
+            date.strftime("%Y-%m") if full_month else date.strftime("%Y-%m-%d")
+        )
+        return f"{base_query} date:{formatted_date}"

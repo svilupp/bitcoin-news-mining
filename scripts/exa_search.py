@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add the src directory to the path so we can import our modules
@@ -37,7 +37,8 @@ def main():
     parser.add_argument(
         "--topic",
         type=str,
-        default="bitcoin cryptocurrency",
+        default="bitcoin cryptocurrency news and developments",
+        # default="The most significant world events for Bitcoin and other cryptocurrencies on",
         help="Base topic to search for (default: 'bitcoin cryptocurrency')",
     )
     parser.add_argument(
@@ -49,14 +50,8 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="exa_results.json",
+        default="data_raw/exa_results.json",
         help="Output file for search results (default: exa_results.json)",
-    )
-    parser.add_argument(
-        "--max-chars",
-        type=int,
-        default=1000,
-        help="Maximum characters to retrieve for each result (default: 1000)",
     )
 
     args = parser.parse_args()
@@ -86,7 +81,12 @@ def main():
         query=query,
         search_date=search_date,
         max_results=args.max_results,
-        text_max_chars=args.max_chars,
+        category="news",
+        type="auto",
+        start_published_date=datetime.strftime(search_date, "%Y-%m-%d"),
+        end_published_date=datetime.strftime(
+            search_date + timedelta(days=7), "%Y-%m-%d"
+        ),
     )
 
     # Save results to file
@@ -98,13 +98,13 @@ def main():
     # Print a summary
     print(f"\nSearch Query: {query}")
     print(f"Results found: {len(result.results)}")
-    print("\nTop 3 results:")
+    print("\nTop results:")
 
-    for i, item in enumerate(result.results[:3], 1):
+    for i, item in enumerate(result.results, 1):
         print(f"\n{i}. {item.get('title', 'No title')}")
         print(f"   URL: {item.get('url', 'No URL')}")
         content = item.get("content", "No content")
-        print(f"   Content: {content[:150]}...")
+        print(f"   Content: {content[:300]}...")
 
 
 if __name__ == "__main__":
