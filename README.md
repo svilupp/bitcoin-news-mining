@@ -37,9 +37,17 @@ pip install -e .
 ```
 
 3. Set up environment variables:
+
+You can set environment variables directly:
 ```bash
 export EXA_API_KEY="your-exa-api-key"
 export OPENAI_API_KEY="your-openai-api-key"
+```
+
+Or create a `.env` file in the project root directory:
+```
+EXA_API_KEY=your-exa-api-key
+OPENAI_API_KEY=your-openai-api-key
 ```
 
 ## Database Management
@@ -239,11 +247,29 @@ You can use the interactive application for query discovery:
 python app.py
 ```
 
-This will start an interactive session where you can:
-1. Run different queries for a specific date
-2. Compare results from different queries
-3. Save and load query results
-4. Change the date to search for
+This will start a web server and you can access the application by opening a browser and navigating to `http://localhost:8000` (or the URL shown in the terminal).
+
+The interactive application allows you to:
+1. Enter a search query for Bitcoin and cryptocurrency news
+2. Specify a date in YYYY-MM-DD format
+3. Optionally provide your own API keys (or use the ones from environment variables)
+4. View search results and ranked events side by side
+
+#### Setting up a .env file for the interactive application
+
+For convenience, you can create a `.env` file in the project root directory with your API keys:
+
+```
+# API Keys
+EXA_API_KEY=your-exa-api-key
+OPENAI_API_KEY=your-openai-api-key
+
+# Optional Configuration
+# MONGODB_URI=mongodb://localhost:27017/
+# DATABASE_NAME=bitcoin_news
+```
+
+The application will automatically load these environment variables when it starts.
 
 ### Using the Pipelines in Your Code
 

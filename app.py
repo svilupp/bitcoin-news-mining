@@ -4,8 +4,12 @@ from fasthtml.common import *
 import os
 import logging
 from datetime import datetime
+import dotenv
 
 from src.pipeline import CryptoEventPipeline
+
+# Load environment variables from .env file if it exists
+dotenv.load_dotenv()
 
 # Configure logging
 logging.basicConfig(

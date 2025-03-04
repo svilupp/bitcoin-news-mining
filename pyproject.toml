@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "bson>=0.5.10",
+    "dotenv>=0.9.9",
     "exa-py>=1.8.9",
     "httpx>=0.28.1",
     "monsterui>=1.0.11",
@@ -14,6 +15,7 @@ dependencies = [
     "pydantic>=2.10.6",
     "pydantic-ai>=0.0.29",
     "pymongo>=4.11.1",
+    "python-dotenv>=1.0.0",
     "python-fasthtml>=0.12.4",
     "tavily-python>=0.5.1",
     "tqdm>=4.67.1",
