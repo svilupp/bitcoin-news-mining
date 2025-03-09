@@ -40,6 +40,69 @@ def Accordion(title, content):
     )
 
 
+def BaseCard(
+    title,
+    url,
+    date,
+    score_or_relevance,
+    score_label,
+    description,
+    highlights=None,
+    summary=None,
+):
+    """Base card component for displaying search results or events"""
+    # Get domain for display
+    display_url = url
+    if url.startswith("http"):
+        try:
+            from urllib.parse import urlparse
+
+            parsed_url = urlparse(url)
+            display_url = "URL: " + parsed_url.netloc
+        except:
+            pass
+
+    # Full content to be hidden in accordion
+    full_content = Div(
+        P(description, cls=TextPresets.muted_sm),
+    )
+
+    # Create optional content elements for highlights and summary
+    optional_elements = []
+    if highlights:
+        optional_elements.append(
+            P(f"Highlights: {highlights}", cls=TextPresets.muted_sm)
+        )
+    if summary:
+        optional_elements.append(P(f"Summary: {summary}", cls=TextPresets.muted_sm))
+
+    # Create optional content div only if there are elements to show
+    optional_content = Div(*optional_elements) if optional_elements else None
+
+    card_elements = [
+        # Title
+        H4(title, cls="mt-2"),
+        # Key information at the top
+        Div(
+            A(display_url, href=url, target="_blank", cls=ButtonT.link),
+            P(
+                f"{date} | {score_label}: {score_or_relevance}",
+                cls=TextPresets.muted_sm,
+            ),
+            cls="mb-2",
+        ),
+        # Full content in accordion
+        Accordion("Show Details", full_content),
+    ]
+
+    # Add optional content if it exists
+    if optional_content:
+        # Insert optional content before the accordion (at index 2)
+        card_elements.insert(2, optional_content)
+
+    return Card(*card_elements)
+
+
 def SearchCard(result):
     """Card component for displaying search results"""
     # Extract fields with defaults for optional fields
@@ -51,47 +114,18 @@ def SearchCard(result):
     highlights = result.get("highlights", "")
     summary = result.get("summary", "")
 
-    # Get domain for display
-    display_url = url
-    if url.startswith("http"):
-        try:
-            from urllib.parse import urlparse
-
-            parsed_url = urlparse(url)
-            display_url = parsed_url.netloc
-        except:
-            pass
-
-    # Full content to be hidden in accordion
-    full_content = Div(
-        P(description, cls=TextPresets.muted_sm),
+    card = BaseCard(
+        title=title,
+        url=url,
+        date=f"Published: {date}",
+        score_or_relevance=score,
+        score_label="Score",
+        description=description,
+        highlights=highlights,
+        summary=summary,
     )
 
-    return Card(
-        # Key information at the top
-        Div(
-            A(display_url, href=url, target="_blank", cls=ButtonT.link),
-            P(f"Published: {date} | Score: {score}", cls=TextPresets.muted_sm),
-            cls="mb-2",
-        ),
-        # Title
-        H4(title, cls="mt-2"),
-        # Show highlights and summary if available
-        Div(
-            (
-                P(f"Highlights: {highlights}", cls=TextPresets.muted_sm)
-                if highlights
-                else ""
-            ),
-            P(f"Summary: {summary}", cls=TextPresets.muted_sm) if summary else "",
-        ),
-        # Full content in accordion
-        Accordion("Show Details", full_content),
-        Button(
-            "View Details",
-            cls=(ButtonT.primary, "mt-2"),
-        ),
-    )
+    return card
 
 
 def EventCard(event):
@@ -103,38 +137,16 @@ def EventCard(event):
     description = event.get("description", "No description available")
     relevance_score = event.get("relevance_score", "N/A")
 
-    # Get domain for display
-    display_url = url
-    if url.startswith("http"):
-        try:
-            from urllib.parse import urlparse
-
-            parsed_url = urlparse(url)
-            display_url = parsed_url.netloc
-        except:
-            pass
-
-    # Full content to be hidden in accordion
-    full_content = Div(
-        P(description, cls=TextPresets.muted_sm),
+    card = BaseCard(
+        title=title,
+        url=url,
+        date=f"Date: {date}",
+        score_or_relevance=relevance_score,
+        score_label="Relevance",
+        description=description,
     )
 
-    return Card(
-        # Key information at the top
-        Div(
-            A(display_url, href=url, target="_blank", cls=ButtonT.link),
-            P(f"Date: {date} | Relevance: {relevance_score}", cls=TextPresets.muted_sm),
-            cls="mb-2",
-        ),
-        # Title
-        H4(title, cls="mt-2"),
-        # Full content in accordion
-        Accordion("Show Details", full_content),
-        Button(
-            "View Event",
-            cls=(ButtonT.primary, "mt-2"),
-        ),
-    )
+    return card
 
 
 def search_form():
@@ -169,18 +181,15 @@ def search_form():
         # Judge Prompt section - use a container to ensure full width
         Container(
             H4("Judge Prompt", cls="text-lg font-bold mt-4"),
-            # Use Label and Textarea separately for more control
-            Label("Custom Judge Prompt", for_="judge-prompt"),
-            # Create a textarea with more rows and full width
-            Textarea(
+            LabelTextArea(
+                "Custom Judge Prompt",
                 id="judge-prompt",
                 name="judge_prompt",
                 rows=20,  # Increased rows for more height
                 placeholder="Enter your judge prompt here...",
                 cls="w-full",  # Full width
-            )(
-                current_judge_prompt_value
-            ),  # Set content this way
+                value=current_judge_prompt_value,
+            ),
             cls="w-full",
         ),
     )
@@ -376,11 +385,7 @@ async def search_results(request: Request):
     model = form_data.get("model", current_model)
 
     # Get the judge prompt from the form if it exists, otherwise use empty string
-    judge_prompt = form_data.get("judge_prompt", "")
-    # If the judge prompt is the default, store as empty string
-    if judge_prompt == JUDGE_SYSTEM_PROMPT:
-        judge_prompt = ""
-
+    judge_prompt = form_data.get("judge_prompt", JUDGE_SYSTEM_PROMPT)
     # In a real application, you would process the form data and perform a search
     # Here we just return mock data with JavaScript to update hidden fields
     return Div(
@@ -532,4 +537,4 @@ async def save_feedback(request: Request):
 
 
 # Use a different port
-serve(port=5003)
+serve(port=5000)
