@@ -1,4 +1,5 @@
 from fasthtml.common import *
+from fasthtml.components import Script
 
 # MonsterUI shadows fasthtml components with the same name
 from monsterui.all import *
@@ -7,6 +8,9 @@ import os
 import logging
 from datetime import datetime
 import dotenv
+import json
+from pathlib import Path
+from starlette.requests import Request
 
 from src.llm.judge import JUDGE_SYSTEM_PROMPT
 from src.pipeline import CryptoEventPipeline
@@ -137,6 +141,9 @@ def search_form():
     """Create a responsive search form with query, date, and model selection"""
     models = ["gpt-4o-mini", "gpt-4o"]
 
+    # Get the current judge prompt
+    current_judge_prompt_value = current_judge_prompt
+
     # Advanced settings content
     advanced_settings = DivVStacked(
         # API Keys section
@@ -172,7 +179,7 @@ def search_form():
                 placeholder="Enter your judge prompt here...",
                 cls="w-full",  # Full width
             )(
-                current_judge_prompt
+                current_judge_prompt_value
             ),  # Set content this way
             cls="w-full",
         ),
@@ -226,7 +233,17 @@ def search_form():
             Accordion("Advanced Settings", advanced_settings),
             # Search button centered
             DivCentered(
-                Button("Search", cls=ButtonT.primary, id="search-btn", type="submit"),
+                DivHStacked(
+                    Button(
+                        "Search", cls=ButtonT.primary, id="search-btn", type="submit"
+                    ),
+                    Button(
+                        "Save Feedback",
+                        cls=(ButtonT.secondary, "ml-2"),
+                        data_uk_toggle="target: #feedback-modal",
+                        type="button",
+                    ),
+                ),
                 # Loading indicator
                 Div(id="search-indicator", style="display:none")(
                     Span("Searching...", cls=TextPresets.muted_sm),
@@ -236,6 +253,59 @@ def search_form():
         ),
         # Results section - initially empty, will be populated after search
         Div(id="results", cls="mt-8"),
+        # Feedback Modal
+        Modal(
+            ModalTitle("Save Your Feedback"),
+            P(
+                "Please provide your feedback on the search results and ranked events. This will auto-log the search form configuration.",
+                cls=TextPresets.muted_sm,
+            ),
+            Form(
+                id="feedback-form",
+                hx_post="/save_feedback",
+                hx_target="#feedback-result",
+                hx_trigger="submit",
+                hx_on_after_request="UIkit.modal('#feedback-modal').hide();",
+            )(
+                # Hidden fields to capture current search parameters
+                Input(
+                    type="hidden", id="query-hidden", name="query", value=current_query
+                ),
+                Input(type="hidden", id="date-hidden", name="date", value=current_date),
+                Input(
+                    type="hidden", id="model-hidden", name="model", value=current_model
+                ),
+                # Hidden field for judge prompt
+                Input(
+                    type="hidden",
+                    id="judge-prompt-hidden",
+                    name="judge_prompt",
+                    value=current_judge_prompt,
+                ),
+                # Feedback textarea
+                Textarea(
+                    id="feedback-text",
+                    name="feedback_text",
+                    rows=5,
+                    placeholder="Enter your feedback here...",
+                    cls="w-full mt-2",
+                ),
+                # Footer with buttons
+                Div(
+                    Button(
+                        "Save",
+                        type="submit",
+                        cls=ButtonT.primary,
+                        onclick="setTimeout(function() { UIkit.modal('#feedback-modal').hide(); }, 300);",
+                    ),
+                    ModalCloseButton("Cancel", cls=ButtonT.secondary),
+                    cls="flex justify-between mt-4",
+                ),
+            ),
+            id="feedback-modal",
+        ),
+        # Feedback result notification (hidden initially)
+        Div(id="feedback-result", cls="mt-4"),
     )
 
 
@@ -297,27 +367,53 @@ mock_events = [
 
 
 @rt("/search_results", methods=["POST"])
-def search_results():
+async def search_results(request: Request):
     """Mock endpoint to handle search form submission and return results"""
+    # Get form data
+    form_data = await request.form()
+    query = form_data.get("query", current_query)
+    date = form_data.get("date", current_date)
+    model = form_data.get("model", current_model)
+
+    # Get the judge prompt from the form if it exists, otherwise use empty string
+    judge_prompt = form_data.get("judge_prompt", "")
+    # If the judge prompt is the default, store as empty string
+    if judge_prompt == JUDGE_SYSTEM_PROMPT:
+        judge_prompt = ""
+
     # In a real application, you would process the form data and perform a search
-    # Here we just return mock data
-    return Grid(
-        # Left column: Search Results
-        Div(
-            H3("Search Results", cls="text-xl font-bold mb-4"),
-            Div(id="search-results", cls="space-y-4")(
-                *[SearchCard(result) for result in mock_search_results]
-            ),
+    # Here we just return mock data with JavaScript to update hidden fields
+    return Div(
+        # JavaScript to update hidden fields in the feedback form
+        Script(
+            f"""
+            document.addEventListener('DOMContentLoaded', function() {{
+                document.getElementById('query-hidden').value = "{query}";
+                document.getElementById('date-hidden').value = "{date}";
+                document.getElementById('model-hidden').value = "{model}";
+                document.getElementById('judge-prompt-hidden').value = `{judge_prompt}`;
+            }});
+        """
         ),
-        # Right column: Relevant Events
-        Div(
-            H3("Relevant Events", cls="text-xl font-bold mb-4"),
-            Div(id="event-results", cls="space-y-4")(
-                *[EventCard(event) for event in mock_events]
+        # Search results grid
+        Grid(
+            # Left column: Search Results
+            Div(
+                H3("Search Results", cls="text-xl font-bold mb-4"),
+                Div(id="search-results", cls="space-y-4")(
+                    *[SearchCard(result) for result in mock_search_results]
+                ),
             ),
+            # Right column: Relevant Events
+            Div(
+                H3("Relevant Events", cls="text-xl font-bold mb-4"),
+                Div(id="event-results", cls="space-y-4")(
+                    *[EventCard(event) for event in mock_events]
+                ),
+            ),
+            cols_lg=2,
+            cls="gap-6",
         ),
-        cols_lg=2,
-        cls="gap-6",
     )
 
 
@@ -328,7 +424,7 @@ def search_page():
         "Bitcoin News Search",
         Div(
             search_form(),
-            # Add JavaScript to handle the loading indicator
+            # Add JavaScript to handle the loading indicator and modal closing
             Script(
                 """
                 document.addEventListener('htmx:beforeRequest', function(event) {
@@ -341,6 +437,13 @@ def search_page():
                     if (event.detail.elt.id === 'search-form') {
                         document.getElementById('search-indicator').style.display = 'none';
                     }
+                    
+                    // Close feedback modal after successful form submission
+                    if (event.detail.elt.id === 'feedback-form' && event.detail.successful) {
+                        if (typeof UIkit !== 'undefined' && UIkit.modal) {
+                            UIkit.modal('#feedback-modal').hide();
+                        }
+                    }
                 });
             """
             ),
@@ -352,6 +455,80 @@ def search_page():
 def index():
     """Main page that redirects to the search page"""
     return search_page()
+
+
+@rt("/save_feedback", methods=["POST"])
+async def save_feedback(request: Request):
+    """Save user feedback to a JSON file"""
+    try:
+        # Get form data
+        form_data = await request.form()
+        feedback_text = form_data.get("feedback_text", "")
+        query = form_data.get("query", current_query)
+        date = form_data.get("date", current_date)
+        model = form_data.get("model", current_model)
+        judge_prompt = form_data.get("judge_prompt", "")
+        # Strip special characters, keep only letters, numbers and basic punctuation
+        judge_prompt_clean = "".join(
+            c for c in judge_prompt if c.isalnum() or c in ".,?!;:()[]{}\"' "
+        )
+        default_prompt_clean = "".join(
+            c for c in JUDGE_SYSTEM_PROMPT if c.isalnum() or c in ".,?!;:()[]{}\"' "
+        )
+        if judge_prompt_clean.lower() == default_prompt_clean.lower():
+            judge_prompt = ""
+
+        # Count results and events (if available)
+        search_results_count = len(mock_search_results)
+        events_count = len(mock_events)
+
+        # Create feedback data structure
+        feedback_data = {
+            "timestamp": datetime.now().isoformat(),
+            "query": query,
+            "date": date,
+            "model": model,
+            "judge_prompt": judge_prompt,
+            "search_results_count": search_results_count,
+            "events_count": events_count,
+            "feedback": feedback_text,
+        }
+
+        # Ensure the feedback file exists
+        feedback_file = Path("feedback.json")
+
+        # Load existing data or create new list
+        if feedback_file.exists():
+            try:
+                with open(feedback_file, "r") as f:
+                    existing_data = json.load(f)
+                    if not isinstance(existing_data, list):
+                        existing_data = []
+            except json.JSONDecodeError:
+                # If file exists but is not valid JSON, start fresh
+                existing_data = []
+        else:
+            existing_data = []
+
+        # Append new feedback
+        existing_data.append(feedback_data)
+
+        # Write back to file
+        with open(feedback_file, "w") as f:
+            json.dump(existing_data, f, indent=2)
+
+        # Return success message with JavaScript to close the modal
+        return Div(
+            P("Feedback saved successfully!", cls="text-success font-bold"),
+            cls="p-4 bg-success-light rounded",
+        )
+
+    except Exception as e:
+        logging.error(f"Error saving feedback: {str(e)}")
+        return Div(
+            P(f"Error saving feedback: {str(e)}", cls="text-error font-bold"),
+            cls="p-4 bg-error-light rounded",
+        )
 
 
 # Use a different port
