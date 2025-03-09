@@ -29,7 +29,7 @@ hdrs = Theme.blue.headers()
 
 # fast_app is shadowed by MonsterUI to make it default to no Pico, and add body classes
 # needed for frankenui theme styling
-app, rt = fast_app(hdrs=hdrs, live=True)
+app, rt = fast_app(hdrs=hdrs, live=False)
 
 # Default values for the search form
 current_query = "Bitcoin cryptocurrency news and developments"
@@ -219,7 +219,7 @@ def EventCard(event):
 
 def search_form():
     """Create a responsive search form with query, date, and model selection"""
-    models = ["gpt-4o-mini", "gpt-4o"]
+    models = ["gpt-4o-mini", "gpt-4o"]  # , "gemini-2.0-flash"
 
     # Get the current judge prompt
     current_judge_prompt_value = current_judge_prompt
@@ -243,6 +243,13 @@ def search_form():
                     name="exa_api_key",
                     type="password",
                     placeholder="Enter your EXA API key...",
+                ),
+                LabelInput(
+                    "Google API Key",
+                    id="google_api_key",
+                    name="google_api_key",
+                    type="password",
+                    placeholder="Enter your Google API key...",
                 ),
             ),
         ),
@@ -390,6 +397,7 @@ def initialize_pipeline():
     # Get API keys from environment variables
     exa_api_key = os.environ.get("EXA_API_KEY")
     openai_api_key = os.environ.get("OPENAI_API_KEY")
+    google_api_key = os.environ.get("GOOGLE_API_KEY")
 
     # Check if API keys are available
     if not exa_api_key or not openai_api_key:
@@ -489,6 +497,15 @@ async def run_ranking(
     if openai_api_key:
         pipeline.openai_client.api_key = openai_api_key
 
+    if model == "gemini-2.0-flash":
+        logger.info(f"Using Gemini API key -- {openai_api_key}")
+        pipeline.openai_client.base_url = (
+            "https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+    else:
+        logger.info(f"Using OpenAI API key -- {openai_api_key}")
+        pipeline.openai_client.base_url = "https://api.openai.com/v1"
+
     try:
         # Run the ranking part of the pipeline
         logger.info(f"Running ranking with model: {model}")
@@ -556,10 +573,12 @@ async def search_results(request: Request):
     # Get API keys if provided
     openai_api_key = form_data.get("openai_api_key", "").strip()
     exa_api_key = form_data.get("exa_api_key", "").strip()
+    google_api_key = form_data.get("google_api_key", "").strip()
 
     # Use provided API keys if not empty
     openai_key = openai_api_key if openai_api_key else None
     exa_key = exa_api_key if exa_api_key else None
+    google_key = google_api_key if google_api_key else None
     judge_prompt_val = judge_prompt if judge_prompt.strip() else None
 
     # First, run the search part
@@ -576,11 +595,12 @@ async def search_results(request: Request):
     )
 
     # Now run the ranking part
+    api_key = openai_key if model == "gpt-4o-mini" or model == "gpt-4o" else google_key
     ranking_result = await run_ranking(
         search_result["search_result"],
         search_result["formatted_query"],
         search_result["date"],
-        openai_key,
+        api_key,
         model,
         judge_prompt_val,
     )
