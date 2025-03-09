@@ -18,29 +18,7 @@ class CryptoEvent(BaseModel):
     Date is the date of the event, in the format "YYYY-MM-DD".
     Published date is the date of publication of the article/source, in the format "YYYY-MM-DD", provide if different from the date of event.
 
-    The score field indicates the historical significance for Bitcoin and date confidence:
-
-    5 - Extremely significant event with definitive date confirmation
-       - Major historical milestones (e.g. Bitcoin genesis block)
-       - Well-documented price records or market events
-       - Multiple reliable sources confirm exact date
-
-    4 - Moderately significant event with strong date confidence
-       - Important technical developments or upgrades
-       - Notable price movements or market activity
-       - Date is well-documented
-
-    3 - Minor crypto event with reasonable date confidence
-       - Interesting but not groundbreaking developments
-       - Moderate market impact or adoption milestones
-       - Date is reported but may have some ambiguity
-
-    2 - Minor crypto event with uncertain date
-       - Small technical updates or announcements, mentions, not real events
-       - Date is reported but poorly documented
-
-    1 - Not relevant for Bitcoin or cryptocurrency
-       - General news, not about Bitcoin or cryptocurrency
+    The score field indicates the historical significance for Bitcoin and date confidence.
     """
 
     reasoning: str
@@ -76,6 +54,30 @@ Even if you do not provide any results, you must include a reasoning why you hav
 3. The information should be factual and contain actual events, not just speculation or opinion.
 4. The event must be significant and have a clear impact on Bitcoin or cryptocurrency. Include also social and cultural reference that suggest the rising significance and adoption of crypto assets.
 5. Prioritize reputable sources, such as Wikipedia, bitcoinwiki.org, coindesk.com, cointelegraph.com, blockchain.com, bitcoin.com, etc.
+
+### Relevance score
+Apply the following numeric score to each event:
+5 - Extremely significant event with definitive date confirmation
+    - Major historical milestones (e.g. Bitcoin genesis block)
+    - Well-documented price records or market events
+    - Multiple reliable sources confirm exact date
+
+4 - Moderately significant event with strong date confidence
+    - Important technical developments or upgrades
+    - Notable price movements or market activity
+    - Date is well-documented
+
+3 - Minor crypto event with reasonable date confidence
+    - Interesting but not groundbreaking developments
+    - Moderate market impact or adoption milestones
+    - Date is reported but may have some ambiguity
+
+2 - Minor crypto event with uncertain date
+    - Small technical updates or announcements, mentions, not real events
+    - Date is reported but poorly documented
+
+1 - Not relevant for Bitcoin or cryptocurrency
+    - General news, not about Bitcoin or cryptocurrency
 
 ### Output format
 Return a JSON object with these fields:
