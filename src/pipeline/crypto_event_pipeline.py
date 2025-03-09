@@ -2,15 +2,15 @@
 
 import logging
 from datetime import datetime
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 
 from openai import AsyncOpenAI
 
 from src.db import MongoDB
-from src.llm.judge import EventJudge
-from src.llm.ranker import EventRanker
+from src.llm.judge import EventJudge, JUDGE_SYSTEM_PROMPT
 from src.models import Event, SearchResult
 from src.search.exa import ExaSearch
+
 
 # Configure logging
 logging.basicConfig(
@@ -52,9 +52,8 @@ class CryptoEventPipeline:
         # Initialize OpenAI client
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
 
-        # Initialize judge and ranker
+        # Initialize judge
         self.judge = EventJudge(client=self.openai_client, model_name=openai_model)
-        self.ranker = EventRanker(client=self.openai_client, model_name=openai_model)
 
         # Initialize database
         if load_db:
@@ -67,31 +66,23 @@ class CryptoEventPipeline:
         else:
             self.db = None
 
-    async def process_date(
-        self,
-        date: datetime,
-        base_query: str = "Bitcoin cryptocurrency news and developments",
-        full_month: bool = False,
-        max_results: int = 15,
-        save_results: bool = True,
-    ) -> Tuple[SearchResult, List[Event]]:
-        """Process a specific date to find and store crypto events.
+    async def _perform_search(
+        self, date: datetime, base_query: str, full_month: bool, max_results: int
+    ) -> Tuple[SearchResult, str]:
+        """Perform search for a specific date.
 
         Args:
             date: Date to process
             base_query: Base search query to use
             full_month: Whether to search for a full month or an exact date
             max_results: Maximum number of search results to retrieve
-            save_results: Whether to save the search results to the database
 
         Returns:
             Tuple containing:
                 - The SearchResult object with search results
-                - List of Event objects that were found and stored
+                - The formatted query used for search
         """
-        logger.info(f"Processing date: {date.strftime('%Y-%m-%d')}")
-
-        # Step 1: Format query and run search
+        # Format query and run search
         formatted_query = self.search_client.format_crypto_query(
             base_query, date, full_month=full_month
         )
@@ -104,22 +95,38 @@ class CryptoEventPipeline:
             published_window_days=published_window_days,
         )
 
-        # Step 2: Save search result to database
-        if save_results:
-            search_result_id = self.db.save_search_result(search_result)
-            search_result.id = search_result_id
-            logger.info(f"Saved search result with ID: {search_result_id}")
-        else:
-            search_result_id = None
+        return search_result, formatted_query
 
-        # Step 3: Evaluate relevance with judge
+    async def _rank_search_results(
+        self,
+        search_result: SearchResult,
+        formatted_query: str,
+        date: datetime,
+        judge_system_prompt: str,
+        judge_model: str,
+    ) -> List[Event]:
+        """Rank search results and convert to Event objects without database operations.
+
+        Args:
+            search_result: The SearchResult object with search results
+            formatted_query: The formatted query used for search
+            date: Date being processed
+            judge_system_prompt: System prompt for the judge
+            judge_model: Model to use for judging
+
+        Returns:
+            List of Event objects that were found and ranked
+        """
+        # Evaluate relevance with judge
         crypto_events = await self.judge.evaluate_relevance(
             search_result=search_result,
             query=formatted_query,
             query_date=date,
+            model=judge_model,
+            system_prompt=judge_system_prompt,
         )
 
-        # Step 4: Convert judge results to Event objects
+        # Convert judge results to Event objects
         events = []
         for i, crypto_event in enumerate(crypto_events.events):
             # Parse event date
@@ -138,16 +145,71 @@ class CryptoEventPipeline:
                 description=crypto_event.description,
                 source_url=crypto_event.url,
                 provider="exa",
-                search_result_id=search_result_id,
+                search_result_id=None,  # Will be set in process_date if needed
                 relevance_score=crypto_event.score,
                 relevance_reasoning=crypto_event.reasoning,
             )
             events.append(event)
 
-        # Step 5: Save events to database
+        return events
+
+    async def process_date(
+        self,
+        date: datetime,
+        base_query: str = "Bitcoin cryptocurrency news and developments",
+        full_month: bool = False,
+        max_results: int = 15,
+        save_results: bool = True,
+        judge_system_prompt: str = JUDGE_SYSTEM_PROMPT,
+        judge_model: str = "gpt-4o-mini",
+    ) -> Tuple[SearchResult, List[Event]]:
+        """Process a specific date to find and store crypto events.
+
+        Args:
+            date: Date to process
+            base_query: Base search query to use
+            full_month: Whether to search for a full month or an exact date
+            max_results: Maximum number of search results to retrieve
+            save_results: Whether to save the search results to the database
+            judge_system_prompt: System prompt for the judge
+            judge_model: Model to use for judging
+
+        Returns:
+            Tuple containing:
+                - The SearchResult object with search results
+                - List of Event objects that were found and stored
+        """
+        logger.info(f"Processing date: {date.strftime('%Y-%m-%d')}")
+
+        # Step 1: Perform search
+        search_result, formatted_query = await self._perform_search(
+            date=date,
+            base_query=base_query,
+            full_month=full_month,
+            max_results=max_results,
+        )
+
+        # Step 2: Save search result to database if requested
+        search_result_id = None
+        if save_results:
+            search_result_id = self.db.save_search_result(search_result)
+            search_result.id = search_result_id
+            logger.info(f"Saved search result with ID: {search_result_id}")
+
+        # Step 3: Rank search results
+        events = await self._rank_search_results(
+            search_result=search_result,
+            formatted_query=formatted_query,
+            date=date,
+            judge_system_prompt=judge_system_prompt,
+            judge_model=judge_model,
+        )
+
+        # Step 4: Update events with search_result_id and save to database if requested
         if save_results:
             logger.info(f"Saving {len(events)} events to database")
             for event in events:
+                event.search_result_id = search_result_id
                 event_id = self.db.save_event(event)
                 event.id = event_id
                 logger.info(f"Saved event with ID: {event_id}")
