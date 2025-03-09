@@ -1,11 +1,13 @@
 """Interactive application for Bitcoin news mining query discovery."""
 
 from fasthtml.common import *
+from monsterui.all import *
 import os
 import logging
 from datetime import datetime
 import dotenv
 
+from src.llm.judge import JUDGE_SYSTEM_PROMPT
 from src.pipeline import CryptoEventPipeline
 
 # Load environment variables from .env file if it exists
@@ -18,13 +20,146 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize the FastHTML app
-app = FastHTML()
-rt = app.route
+hdrs = Theme.blue.headers(
+    shadows=ThemeShadows.md,
+)
+# app, rt = fast_app(headers=hdrs)
+app, rt = fast_app()
 
 # Global variables to store state
 pipeline = None
 current_query = "Bitcoin cryptocurrency news and developments"
 current_date = datetime.now()
+current_model = "gpt-4o-mini"
+current_judge_prompt = JUDGE_SYSTEM_PROMPT
+
+
+def Accordion(title, content):
+    return Details(
+        Summary(
+            title, cls="cursor-pointer p-3 bg-gray-100 hover:bg-gray-200 rounded-md"
+        ),
+        Div(content, cls="p-3 border-l border-gray-200 ml-2 mt-2"),
+        cls="mb-4",
+    )
+
+
+def DateTag(date_str, prefix="Date:"):
+    """Create a date tag with prefix"""
+    # Handle None case
+    if date_str is None:
+        return Label(f"{prefix} Unknown")
+
+    # Handle datetime object
+    if isinstance(date_str, datetime):
+        formatted_date = date_str.strftime("%Y-%m-%d")
+        return Label(f"{prefix} {formatted_date}")
+
+    # Handle string type
+    if isinstance(date_str, str):
+        if date_str.lower() == "unknown":
+            return Label(f"{prefix} Unknown")
+
+        # Try to parse and format the date as YYYY-MM-DD
+        try:
+            # Handle ISO format dates
+            if "T" in date_str:
+                date_str = date_str.split("T")[0]
+
+            # Check if date is already in YYYY-MM-DD format
+            if len(date_str) >= 10 and date_str[4:5] == "-" and date_str[7:8] == "-":
+                formatted_date = date_str[:10]  # Extract just YYYY-MM-DD portion
+            else:
+                # Try different parsing approaches
+                try:
+                    # Try direct parsing
+                    dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                    formatted_date = dt.strftime("%Y-%m-%d")
+                except ValueError:
+                    # Fallback parsing
+                    formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%d/%m/%Y"]
+                    for fmt in formats:
+                        try:
+                            dt = datetime.strptime(date_str, fmt)
+                            formatted_date = dt.strftime("%Y-%m-%d")
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        # If no format works, use as is
+                        formatted_date = date_str
+        except Exception:
+            # If any parsing error, use as is
+            formatted_date = date_str
+
+        return Label(f"{prefix} {formatted_date}")
+
+    # Handle any other type by converting to string
+    return Label(f"{prefix} {str(date_str)}")
+
+
+def RelevanceBadge(score):
+    """Create a relevance badge on scale 1-5"""
+    # Normalize score to 1-5 scale if needed
+    if isinstance(score, (int, float)) and score > 5:
+        normalized_score = min(5, max(1, round(score / 2)))
+    else:
+        try:
+            normalized_score = min(5, max(1, int(score)))
+        except (ValueError, TypeError):
+            normalized_score = 3  # Default if score can't be parsed
+
+    return Label(f"Relevance: {normalized_score}")
+
+
+def ResultCard(result, is_event=False):
+    """Create a card for displaying a search result or event."""
+    # Extract common fields
+    title = result.get("title") or "Untitled"
+    url = result.get("url", "#")
+
+    # Handle different content types
+    if is_event:
+        # For event results
+        date_str = result.get("date", "Unknown")
+        date_prefix = "Event:"
+        content = P(result.get("description", "No description available"))
+        score = result.get("relevance_score", 3)
+        rank = result.get("rank", "N/A")
+        rank_badge = Span(f"Rank: {rank}")
+    else:
+        # For search results
+        date_str = result.get("published_date", "Unknown")
+        date_prefix = "Published:"
+        content = P(
+            format_content(
+                result.get("highlights"), result.get("summary"), result.get("content")
+            )
+        )
+        score = result.get("score", 3)
+        rank_badge = None
+
+    # Create badges
+    badges = [DateTag(date_str, date_prefix), RelevanceBadge(score)]
+    if rank_badge:
+        badges.append(rank_badge)
+
+    # Create badge container using DivLAligned
+    badge_container = DivLAligned(*badges)
+
+    # Create a card using the Card component
+    return Card(
+        DivLAligned(
+            Div(
+                H4(title),
+                content,
+                DivFullySpaced(
+                    badge_container, P(A("View Source", href=url, target="_blank"))
+                ),
+            )
+        ),
+        cls=CardT.hover,
+    )
 
 
 def initialize_pipeline():
@@ -48,9 +183,16 @@ def initialize_pipeline():
     )
 
 
-async def run_pipeline(query, date_str, openai_api_key=None, exa_api_key=None):
+async def run_pipeline(
+    query,
+    date_str,
+    openai_api_key=None,
+    exa_api_key=None,
+    model="gpt-4o-mini",
+    judge_prompt=None,
+):
     """Run the full pipeline (search and judge) and return results."""
-    global pipeline, current_query, current_date
+    global pipeline, current_query, current_date, current_model, current_judge_prompt
 
     # Parse date
     if date_str:
@@ -63,49 +205,42 @@ async def run_pipeline(query, date_str, openai_api_key=None, exa_api_key=None):
     else:
         date = datetime.now()
 
+    # Update global state
     current_query = query
     current_date = date
+    current_model = model
+    if judge_prompt:
+        current_judge_prompt = judge_prompt
 
-    # Initialize pipeline if not already done or if new API keys are provided
-    if pipeline is None or openai_api_key or exa_api_key:
+    # Initialize pipeline if not already done
+    if pipeline is None:
         try:
-            # Get API keys from environment variables or use provided ones
-            env_exa_api_key = os.environ.get("EXA_API_KEY")
-            env_openai_api_key = os.environ.get("OPENAI_API_KEY")
-
-            # Use provided keys if available, otherwise fall back to environment variables
-            exa_key = exa_api_key if exa_api_key else env_exa_api_key
-            openai_key = openai_api_key if openai_api_key else env_openai_api_key
-
-            if not exa_key or not openai_key:
-                return {
-                    "error": "Missing API keys. Please provide both OpenAI and EXA API keys."
-                }
-
-            # Initialize pipeline with the appropriate keys
-            pipeline = CryptoEventPipeline(
-                exa_api_key=exa_key,
-                openai_api_key=openai_key,
-                load_db=False,
-            )
+            pipeline = initialize_pipeline()
         except ValueError as e:
+            logger.error(f"Pipeline initialization error: {str(e)}")
             return {"error": str(e)}
 
+    # Override API keys if provided
+    if openai_api_key:
+        pipeline.openai_api_key = openai_api_key
+    if exa_api_key:
+        pipeline.exa_api_key = exa_api_key
+
     try:
-        # Run the pipeline
-        search_result, events = await pipeline.process_date(
-            date=date,
-            base_query=query,
-            full_month=False,
-            max_results=15,
-            save_results=False,
+        # Run the search to get articles
+        logger.info(f"Running search for query: {query}")
+        search_result = await pipeline.search(query, date)
+
+        # Run the judge to extract and rank events
+        logger.info("Running judge to extract and rank events")
+        events = await pipeline.judge.evaluate_relevance(
+            search_result, query, date, model, judge_prompt
         )
 
         return {
             "search_result": {
-                "query": search_result.query,
-                "search_date": search_result.search_date.isoformat(),
-                "results": search_result.results,
+                "query": query,
+                "results": search_result.articles,
             },
             "events": [event.model_dump() for event in events],
         }
@@ -117,234 +252,147 @@ async def run_pipeline(query, date_str, openai_api_key=None, exa_api_key=None):
 @rt("/")
 def get():
     """Render the main page."""
-    form = Form(
-        Group(
-            Label("Query:", for_="query"),
-            Textarea(
-                id="query",
-                name="query",
-                value=current_query,
-                rows=3,
-                style="width: 100%; font-size: 16px; padding: 10px;",
+    form = Div(cls="space-y-4")(
+        DivCentered(
+            H3(
+                "Explore the sourcing and ranking functionality",
             ),
-            Small("Enter your search query for Bitcoin news and events"),
         ),
-        Group(
-            Label("Date (YYYY-MM-DD):", for_="date"),
-            Input(id="date", name="date", value=current_date.strftime("%Y-%m-%d")),
-        ),
-        Group(
-            Label("OpenAI API Key:", for_="openai_api_key"),
-            Input(
-                id="openai_api_key",
-                name="openai_api_key",
-                type="password",
-                placeholder="Leave empty to use environment variable",
+        Form(cls="space-y-4")(
+            # First row with Query, Date, and Model dropdown in 8:2:2 ratio
+            Grid(
+                LabelInput(
+                    "Query:",
+                    input_el=Textarea(
+                        id="query", name="query", value=current_query, rows=3
+                    ),
+                ),
+                LabelInput(
+                    "Date:",
+                    input_el=Input(
+                        id="date",
+                        name="date",
+                        value=current_date.strftime("%Y-%m-%d"),
+                        placeholder="YYYY-MM-DD",
+                    ),
+                ),
+                LabelInput(
+                    "Model:",
+                    input_el=Select(
+                        id="model",
+                        name="model",
+                        options=[("gpt-4o-mini", "GPT-4o Mini"), ("gpt-4o", "GPT-4o")],
+                        value=current_model,
+                    ),
+                ),
+                cols="8 2 2",
             ),
-            Small("Optional: Provide your own OpenAI API key"),
-        ),
-        Group(
-            Label("EXA API Key:", for_="exa_api_key"),
-            Input(
-                id="exa_api_key",
-                name="exa_api_key",
-                type="password",
-                placeholder="Leave empty to use environment variable",
+            # Accordion for API keys
+            Accordion(
+                "API Settings",
+                Grid(
+                    LabelInput(
+                        "OpenAI API Key:",
+                        input_el=Input(
+                            id="openai_api_key",
+                            name="openai_api_key",
+                            type="password",
+                            placeholder="Leave empty to use environment variable",
+                        ),
+                        help_text="Optional: Provide your own OpenAI API key",
+                    ),
+                    LabelInput(
+                        "EXA API Key:",
+                        input_el=Input(
+                            id="exa_api_key",
+                            name="exa_api_key",
+                            type="password",
+                            placeholder="Leave empty to use environment variable",
+                        ),
+                        help_text="Optional: Provide your own EXA API key",
+                    ),
+                    cols="1 1",
+                ),
             ),
-            Small("Optional: Provide your own EXA API key"),
-        ),
-        Group(
-            Button("Run Pipeline", id="run-btn", hx_post="/run", hx_target="#results"),
+            # Accordion for judge prompt
+            Accordion(
+                "Judge Prompt",
+                Textarea(
+                    id="judge_prompt",
+                    name="judge_prompt",
+                    value=current_judge_prompt,
+                    rows=8,
+                ),
+            ),
+            # Centered button
+            DivCentered(
+                Button(
+                    "Run Pipeline",
+                    id="run-btn",
+                    hx_post="/run",
+                    hx_target="#results",
+                    cls=ButtonT.primary,
+                )
+            ),
         ),
         id="search-form",
     )
 
     results = Div(id="results")
 
-    return Titled(
-        "Bitcoin News Mining Explorer",
-        P(
-            "Explore the sourcing and ranking functionality of the Bitcoin news mining pipeline"
-        ),
-        Card(form, header=H2("Search Parameters")),
-        results,
-        Style(
-            """
-            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-            .card { margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-            textarea#query {
-                width: 100%;
-                min-height: 80px;
-                font-size: 16px;
-                padding: 12px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-                transition: border-color 0.2s, box-shadow 0.2s;
-                resize: vertical;
-                font-family: inherit;
-            }
-            textarea#query:focus {
-                border-color: #0066cc;
-                box-shadow: inset 0 1px 3px rgba(0,102,204,0.2);
-                outline: none;
-            }
-            .result-card { 
-                margin-bottom: 15px; 
-                padding: 15px; 
-                border: 1px solid #e0e0e0; 
-                border-radius: 8px; 
-                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-                background-color: #fff;
-                transition: transform 0.2s, box-shadow 0.2s;
-            }
-            .result-card:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 3px 6px rgba(0,0,0,0.12);
-            }
-            .result-card h4 { margin-top: 0; color: #333; }
-            .result-card p { margin: 8px 0; color: #555; }
-            .result-card a { color: #0066cc; text-decoration: none; }
-            .result-card a:hover { text-decoration: underline; }
-            .error { color: #d32f2f; font-weight: bold; padding: 10px; background: #ffebee; border-radius: 4px; }
-            .badge { 
-                display: inline-block; 
-                background: #007bff; 
-                color: white; 
-                padding: 3px 8px; 
-                border-radius: 12px; 
-                font-size: 12px; 
-                margin-left: 8px;
-                font-weight: 500;
-            }
-            .badge.success { background: #28a745; }
-            .columns { 
-                display: flex; 
-                gap: 25px; 
-                margin-top: 20px;
-            }
-            .column { 
-                flex: 1; 
-                background: #f9f9f9;
-                padding: 20px;
-                border-radius: 8px;
-            }
-            .column h3 {
-                margin-top: 0;
-                padding-bottom: 10px;
-                border-bottom: 1px solid #eee;
-                color: #444;
-            }
-            .query-display {
-                font-size: 1.1em;
-                background: #f0f4f8;
-                padding: 10px 15px;
-                border-radius: 6px;
-                margin-bottom: 15px;
-                border-left: 4px solid #0066cc;
-            }
-            .query-text {
-                font-weight: bold;
-                color: #0066cc;
-            }
-            @media (max-width: 768px) { 
-                .columns { flex-direction: column; } 
-            }
-        """
-        ),
-    )
+    return Titled("Bitcoin News Mining Explorer", Div(cls="space-y-4")(form, results))
 
 
 @rt("/run", methods=["POST"])
-async def run(query: str, date: str, openai_api_key: str = "", exa_api_key: str = ""):
+async def run(
+    query: str,
+    date: str,
+    model: str = "gpt-4o-mini",
+    judge_prompt: str = JUDGE_SYSTEM_PROMPT,
+    openai_api_key: str = "",
+    exa_api_key: str = "",
+):
     """Run the pipeline and return results."""
     # Use provided API keys if not empty
     openai_key = openai_api_key if openai_api_key.strip() else None
     exa_key = exa_api_key if exa_api_key.strip() else None
+    judge_prompt_val = judge_prompt if judge_prompt.strip() else None
 
-    result = await run_pipeline(query, date, openai_key, exa_key)
+    result = await run_pipeline(
+        query, date, openai_key, exa_key, model, judge_prompt_val
+    )
 
     if "error" in result:
-        return Div(result["error"], cls="error")
-
-    search_results = Div(
-        H3("Search Results"),
-        *[
-            Div(
-                H4(
-                    result.get("title", "No Title"),
-                    Span(f"{result.get('score', 'N/A')}", cls="badge"),
-                ),
-                P(f"Published: {result.get('published_date', 'Unknown')}"),
-                P(
-                    A(
-                        result.get("url", "#"),
-                        href=result.get("url", "#"),
-                        target="_blank",
-                    )
-                ),
-                P(
-                    # Handle highlights that might be a list
-                    format_content(
-                        result.get("highlights"),
-                        result.get("summary"),
-                        result.get("content"),
-                    )
-                ),
-                cls="result-card",
-            )
-            for result in result["search_result"]["results"]
-        ],
-    )
+        return Alert(result["error"], cls=AlertT.error)
 
     # Sort events by rank
     events = sorted(
         result["events"], key=lambda x: (x.get("rank") is None, x.get("rank"))
     )
 
-    ranked_events = Div(
-        H3("Ranked Events"),
-        *[
-            Div(
-                H4(
-                    event.get("title", "No Title"),
-                    Span(f"Rank: {event.get('rank', 'N/A')}", cls="badge"),
-                    Span(
-                        f"Score: {event.get('relevance_score', 'N/A')}",
-                        cls="badge success",
-                    ),
-                ),
-                P(f"Event Date: {event.get('event_date', 'Unknown')}"),
-                P(
-                    A(
-                        event.get("source_url", "#"),
-                        href=event.get("source_url", "#"),
-                        target="_blank",
-                    )
-                ),
-                P(event.get("description", "No description")),
-                cls="result-card",
-            )
-            for event in events
-        ],
+    # Create query display
+    query_display = Div(
+        H3("Search Results"),
+        P(Strong("Query: "), f'"{result["search_result"]["query"]}"'),
+        P(Strong("Model: "), model),
     )
 
-    return Div(
-        H2("Pipeline Results"),
+    # Create grid layout
+    results_grid = Grid(
+        # Left column - Search Results
         Div(
-            P(
-                "Search query: ",
-                Span(f'"{result["search_result"]["query"]}"', cls="query-text"),
-            ),
-            P(f"Search date: {result['search_result']['search_date']}"),
-            cls="query-display",
+            H4("Articles"),
+            *[ResultCard(result) for result in result["search_result"]["results"]],
         ),
+        # Right column - Ranked Events
         Div(
-            Div(search_results, cls="column"),
-            Div(ranked_events, cls="column"),
-            cls="columns",
+            H4("Ranked Events"), *[ResultCard(event, is_event=True) for event in events]
         ),
+        cols="1 1",
     )
+
+    # Return the complete results
+    return Div(H2("Pipeline Results"), query_display, results_grid)
 
 
 def format_content(highlights, summary, content):

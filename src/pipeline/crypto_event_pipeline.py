@@ -7,10 +7,11 @@ from typing import List, Tuple, Optional
 from openai import AsyncOpenAI
 
 from src.db import MongoDB
-from src.llm.judge import EventJudge
+from src.llm.judge import EventJudge, JUDGE_SYSTEM_PROMPT
 from src.llm.ranker import EventRanker
 from src.models import Event, SearchResult
 from src.search.exa import ExaSearch
+
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +75,8 @@ class CryptoEventPipeline:
         full_month: bool = False,
         max_results: int = 15,
         save_results: bool = True,
+        judge_system_prompt: str = JUDGE_SYSTEM_PROMPT,
+        judge_model: str = "gpt-4o-mini",
     ) -> Tuple[SearchResult, List[Event]]:
         """Process a specific date to find and store crypto events.
 
@@ -117,6 +120,8 @@ class CryptoEventPipeline:
             search_result=search_result,
             query=formatted_query,
             query_date=date,
+            model=judge_model,
+            system_prompt=judge_system_prompt,
         )
 
         # Step 4: Convert judge results to Event objects

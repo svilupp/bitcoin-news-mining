@@ -108,6 +108,8 @@ class EventJudge:
         search_result: SearchResult,
         query: str,
         query_date: datetime,
+        system_prompt: str | None = None,
+        model: str | None = None,
     ) -> CryptoEvents:
         """Evaluate if a search result is relevant for Bitcoin/crypto on a specific date.
 
@@ -126,12 +128,15 @@ class EventJudge:
             # Generate response
             logger.info(f"Evaluating relevance with OpenAI for date: {formatted_date}")
 
+            if system_prompt is None:
+                system_prompt = self.system_prompt
+
             completion = await self.client.beta.chat.completions.parse(
-                model=self.model,
+                model=model or self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": self.system_prompt.replace(
+                        "content": system_prompt.replace(
                             "{{formatted_date}}", formatted_date
                         ),
                     },
