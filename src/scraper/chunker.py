@@ -1,8 +1,7 @@
 from typing import List
 from .models import RawChunk
-import logging
-
-logger = logging.getLogger(__name__)
+from loguru import logger
+import re
 
 
 class ContentChunker:
@@ -31,7 +30,7 @@ class ContentChunker:
                 content=f"Image: {image['alt_text']} URL: {image['url']}",
                 image_path=None,  # Will be set when image is downloaded
                 section_heading=None,
-                tokens_estimate=50  # Rough estimate for image processing
+                tokens_estimate=500  # Rough estimate for image processing
             )
             chunks.append(image_chunk)
             chunk_index += 1
@@ -105,14 +104,11 @@ class ContentChunker:
     
     def _split_into_sentences(self, text: str) -> List[str]:
         """Split text into sentences for better chunking"""
-        # Simple sentence splitting - could be improved with nlp library
-        import re
-        
         # Split on sentence endings, but keep common abbreviations together
         sentences = re.split(r'(?<=[.!?])\s+(?=[A-Z])', text)
         
         # Filter out very short sentences and clean up
-        sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
+        sentences = [s.strip() for s in sentences if len(s.strip()) > 2]
         
         return sentences
     

@@ -174,3 +174,8 @@ cython_debug/
 logs/**
 .env
 .DS_Store
+
+data_raw/**
+data_processed/**
+data_output/**
+data_processed/**

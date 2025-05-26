@@ -4,12 +4,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
-import logging
+from loguru import logger
 
 from .models import RawChunk, CryptoEvent, ScrapingResult
 from .downloader import WebDownloader
-
-logger = logging.getLogger(__name__)
 
 
 class StorageManager:
@@ -40,8 +38,8 @@ class StorageManager:
         # Download images and update paths
         await self._download_images(chunks, images_dir)
         
-        # Save raw chunks as JSON
-        chunks_data = [chunk.model_dump() for chunk in chunks]
+        # Save raw chunks as JSON with datetime serialization
+        chunks_data = [chunk.model_dump(mode='json') for chunk in chunks]
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"raw_content_{timestamp}.json"
@@ -63,14 +61,38 @@ class StorageManager:
         domain_dir = self.get_domain_dir(scraping_result.url, self.base_output_dir)
         domain_dir.mkdir(parents=True, exist_ok=True)
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"extracted_events_{timestamp}.json"
-        filepath = domain_dir / filename
+        # Check for existing files for this URL
+        existing_files = list(domain_dir.glob("extracted_events_*.json"))
+        
+        # If we have existing files, check if they're for the same URL
+        url_hash = hash(scraping_result.url) % 10000  # Simple hash for URL identification
+        
+        # Look for existing file with same URL
+        existing_file = None
+        for file_path in existing_files:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('metadata', {}).get('url') == scraping_result.url:
+                        existing_file = file_path
+                        break
+            except:
+                continue
+        
+        if existing_file:
+            # Overwrite existing file for same URL
+            filepath = existing_file
+            logger.info(f"Overwriting existing file for URL: {existing_file}")
+        else:
+            # Create new file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"extracted_events_{timestamp}.json"
+            filepath = domain_dir / filename
         
         # Prepare data for saving
         output_data = {
-            'metadata': scraping_result.model_dump(exclude={'events', 'raw_chunks'}),
-            'events': [event.model_dump() for event in events],
+            'metadata': scraping_result.model_dump(exclude={'events', 'raw_chunks'}, mode='json'),
+            'events': [event.model_dump(mode='json') for event in events],
             'summary': {
                 'total_events': len(events),
                 'success_rate': scraping_result.successful_extractions / scraping_result.total_chunks if scraping_result.total_chunks > 0 else 0,
